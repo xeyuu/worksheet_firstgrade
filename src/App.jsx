@@ -229,10 +229,7 @@ export default function App() {
           <NavItem icon="ti-upload"      label="อัปโหลดไฟล์"  path="/upload"    current={currentPath} onClick={() => nav('/upload')} />
           <NavItem icon="ti-history"     label="ประวัติปริ้น"  path="/history"   current={currentPath} onClick={() => nav('/history')} />
           <NavItem icon="ti-book"        label="จัดการวิชา"   path="/subjects"  current={currentPath} onClick={() => nav('/subjects')} />
-          <div className="sidebar-footer">
-            <i className="ti ti-database" style={{ fontSize: 14 }} aria-hidden="true" /> บันทึกบน Supabase
-            <br /><span>ไฟล์ไม่หายแม้ปิดเว็บ</span>
-          </div>
+
         </aside>
 
         {/* Pages */}
