@@ -70,9 +70,10 @@ export default function App() {
 
   // ── Selection ────────────────────────────────────────────
   const toggleSelect = useCallback((id) => {
+    const sid = String(id)
     setSelected(prev => {
       const next = new Set(prev)
-      next.has(id) ? next.delete(id) : next.add(id)
+      next.has(sid) ? next.delete(sid) : next.add(sid)
       return next
     })
   }, [])
@@ -82,7 +83,7 @@ export default function App() {
   const printSelected = useCallback(async () => {
     if (!selected.size) return
     const ids = [...selected]
-    const items = worksheets.filter(w => ids.includes(String(w.id)))
+    const items = worksheets.filter(w => ids.map(String).includes(String(w.id)))
     const names = items.map(w => w.name)
     const subjLabels = [...new Set(items.map(w => getSubject(w.subject_key).label))]
     const entry = {
@@ -122,7 +123,8 @@ export default function App() {
   const editWorksheet = useCallback(async (id, fields) => {
     try {
       await dbUpdateWs(id, fields)
-      setWorksheets(prev => prev.map(w => w.id === id ? { ...w, ...fields } : w))
+      // อัปเดต state ทันที — compare as string เพราะ Supabase id เป็น number
+      setWorksheets(prev => prev.map(w => String(w.id) === String(id) ? { ...w, ...fields } : w))
       showToast('บันทึกเรียบร้อย')
     } catch (e) {
       showToast('แก้ไขไม่สำเร็จ: ' + e.message)
