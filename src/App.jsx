@@ -24,37 +24,75 @@ const DEFAULT_SUBJECTS = [
   { id: 'art',  key: 'art',  label: 'ศิลปะ',      emoji: '🎨', color: 'art',  locked: true },
 ]
 
-// ── Print helper — fetch blob แล้วสร้าง object URL เพื่อหลีกเลี่ยง cross-origin ──
-async function printViaIframe(url) {
-  try {
-    // ดาวน์โหลดไฟล์มาเป็น blob ก่อน เพื่อให้ iframe ไม่ติด cross-origin
-    const res = await fetch(url)
-    const blob = await res.blob()
-    const blobUrl = URL.createObjectURL(blob)
+// ── Print helper — render เฉพาะหน้าที่ต้องการจาก PDF แล้วปริ้น ──────
+async function printWorksheetItems(items) {
+  // import pdfjs dynamically
+  const pdfjsLib = await import('pdfjs-dist')
+  pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+    'pdfjs-dist/build/pdf.worker.mjs', import.meta.url
+  ).toString()
 
-    const old = document.getElementById('__print_frame__')
-    if (old) { URL.revokeObjectURL(old.dataset.blobUrl); old.remove() }
-
-    const iframe = document.createElement('iframe')
-    iframe.id = '__print_frame__'
-    iframe.dataset.blobUrl = blobUrl
-    iframe.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;border:none;'
-    iframe.src = blobUrl
-    document.body.appendChild(iframe)
-
-    iframe.onload = () => {
-      iframe.contentWindow.focus()
-      iframe.contentWindow.print()
-      // cleanup หลัง 60 วินาที
-      setTimeout(() => {
-        URL.revokeObjectURL(blobUrl)
-        iframe.remove()
-      }, 60000)
-    }
-  } catch(e) {
-    // fallback เปิด tab ใหม่ถ้า fetch ไม่ได้
-    window.open(url, '_blank')
+  // group items by file_url เพื่อโหลด PDF แต่ละไฟล์ครั้งเดียว
+  const byFile = {}
+  for (const item of items) {
+    const url = item.file_url || item.thumbnail_url
+    if (!url) continue
+    if (!byFile[url]) byFile[url] = []
+    byFile[url].push(item)
   }
+
+  // สร้าง canvas สำหรับแต่ละหน้าที่เลือก
+  const canvases = []
+  for (const [fileUrl, fileItems] of Object.entries(byFile)) {
+    const isPdf = fileUrl.match(/\.pdf(\?|$)/i) || fileItems[0]?.storage_path?.match(/\.pdf$/i)
+    if (isPdf) {
+      const res = await fetch(fileUrl)
+      const arrayBuffer = await res.arrayBuffer()
+      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise
+      for (const item of fileItems) {
+        const pageNum = item.page_number || 1
+        const page = await pdf.getPage(pageNum)
+        const viewport = page.getViewport({ scale: 2 })
+        const canvas = document.createElement('canvas')
+        canvas.width = viewport.width
+        canvas.height = viewport.height
+        await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise
+        canvases.push({ canvas, name: item.name })
+      }
+    } else {
+      // รูปภาพ — ใช้ thumbnail โดยตรง
+      for (const item of fileItems) {
+        const url2 = item.thumbnail_url || item.file_url
+        canvases.push({ imgUrl: url2, name: item.name })
+      }
+    }
+  }
+
+  if (canvases.length === 0) return false
+
+  // สร้าง print window จาก canvas/img
+  const win = window.open('', '_blank')
+  if (!win) return false
+
+  const html = canvases.map(c => {
+    if (c.canvas) {
+      return `<div class="page"><img src="${c.canvas.toDataURL('image/png')}" /></div>`
+    }
+    return `<div class="page"><img src="${c.imgUrl}" /></div>`
+  }).join('')
+
+  win.document.write(`<!DOCTYPE html><html><head><title>ปริ้นใบงาน</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #fff; }
+    .page { width: 100%; page-break-after: always; page-break-inside: avoid; }
+    .page:last-child { page-break-after: avoid; }
+    .page img { width: 100%; height: auto; display: block; }
+    @media print { .page { page-break-after: always; } }
+  </style></head><body>${html}</body></html>`)
+  win.document.close()
+  win.onload = () => { win.focus(); win.print() }
+  return true
 }
 
 export default function App() {
@@ -141,10 +179,10 @@ export default function App() {
         return
       }
 
-      // ปริ้นผ่าน hidden iframe — fetch blob ก่อนเพื่อหลีกเลี่ยง cross-origin
-      const printUrl = fileUrls[0] || thumbUrls[0]
-      showToast(`กำลังเตรียมปริ้น — รอสักครู่...`)
-      await printViaIframe(printUrl)
+      // render เฉพาะหน้าที่เลือกแล้วปริ้น
+      showToast('กำลังโหลดใบงาน — รอสักครู่...')
+      const ok = await printWorksheetItems(items)
+      if (!ok) showToast('ไม่พบไฟล์สำหรับปริ้น — ลองอัปโหลดใบงานใหม่')
     } catch (e) {
       showToast('เกิดข้อผิดพลาด: ' + e.message)
     }
