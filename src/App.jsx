@@ -24,6 +24,39 @@ const DEFAULT_SUBJECTS = [
   { id: 'art',  key: 'art',  label: 'ศิลปะ',      emoji: '🎨', color: 'art',  locked: true },
 ]
 
+// ── Print helper — fetch blob แล้วสร้าง object URL เพื่อหลีกเลี่ยง cross-origin ──
+async function printViaIframe(url) {
+  try {
+    // ดาวน์โหลดไฟล์มาเป็น blob ก่อน เพื่อให้ iframe ไม่ติด cross-origin
+    const res = await fetch(url)
+    const blob = await res.blob()
+    const blobUrl = URL.createObjectURL(blob)
+
+    const old = document.getElementById('__print_frame__')
+    if (old) { URL.revokeObjectURL(old.dataset.blobUrl); old.remove() }
+
+    const iframe = document.createElement('iframe')
+    iframe.id = '__print_frame__'
+    iframe.dataset.blobUrl = blobUrl
+    iframe.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;border:none;'
+    iframe.src = blobUrl
+    document.body.appendChild(iframe)
+
+    iframe.onload = () => {
+      iframe.contentWindow.focus()
+      iframe.contentWindow.print()
+      // cleanup หลัง 60 วินาที
+      setTimeout(() => {
+        URL.revokeObjectURL(blobUrl)
+        iframe.remove()
+      }, 60000)
+    }
+  } catch(e) {
+    // fallback เปิด tab ใหม่ถ้า fetch ไม่ได้
+    window.open(url, '_blank')
+  }
+}
+
 export default function App() {
   const navigate  = useNavigate()
   const location  = useLocation()
@@ -101,25 +134,17 @@ export default function App() {
 
       // รวม file_url ที่ไม่ซ้ำกัน (หลายหน้าจาก PDF เดียวกันใช้ file_url เดียวกัน)
       const fileUrls = [...new Set(items.map(w => w.file_url).filter(Boolean))]
-      const thumbUrls = items.map(w => w.thumbnail_url).filter(Boolean)
+      const thumbUrls = [...new Set(items.map(w => w.thumbnail_url).filter(Boolean))]
 
       if (fileUrls.length === 0 && thumbUrls.length === 0) {
         showToast('ไม่พบไฟล์สำหรับปริ้น — ลองอัปโหลดใบงานใหม่')
         return
       }
 
-      // ใช้ file_url ถ้ามี ไม่งั้น fallback เป็น thumbnail
-      const urlsToOpen = fileUrls.length > 0 ? fileUrls : thumbUrls
-
-      urlsToOpen.forEach((url, i) => {
-        setTimeout(() => {
-          const win = window.open(url, '_blank')
-          if (win) {
-            win.addEventListener('load', () => { win.focus(); win.print() })
-          }
-        }, i * 800)
-      })
-      showToast(`เปิดไฟล์ปริ้น ${urlsToOpen.length} ไฟล์ — กรุณาอนุญาต popup ถ้า browser ถาม`)
+      // ปริ้นผ่าน hidden iframe — fetch blob ก่อนเพื่อหลีกเลี่ยง cross-origin
+      const printUrl = fileUrls[0] || thumbUrls[0]
+      showToast(`กำลังเตรียมปริ้น — รอสักครู่...`)
+      await printViaIframe(printUrl)
     } catch (e) {
       showToast('เกิดข้อผิดพลาด: ' + e.message)
     }
