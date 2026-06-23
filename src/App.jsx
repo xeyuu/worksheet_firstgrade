@@ -82,7 +82,7 @@ export default function App() {
   const printSelected = useCallback(async () => {
     if (!selected.size) return
     const ids = [...selected]
-    const items = worksheets.filter(w => ids.includes(w.id))
+    const items = worksheets.filter(w => ids.includes(String(w.id)))
     const names = items.map(w => w.name)
     const subjLabels = [...new Set(items.map(w => getSubject(w.subject_key).label))]
     const entry = {
@@ -93,13 +93,26 @@ export default function App() {
     }
     try {
       await insertHistory(entry)
-      // Mark printed
       await Promise.all(ids.map(id => dbUpdateWs(id, { printed: true })))
-      setWorksheets(prev => prev.map(w => ids.includes(w.id) ? { ...w, printed: true } : w))
+      setWorksheets(prev => prev.map(w => ids.includes(String(w.id)) ? { ...w, printed: true } : w))
       setHistory(prev => [{ ...entry, id: Date.now() }, ...prev])
       clearSelected()
-      showToast(`ส่งปริ้น ${names.length} ใบเรียบร้อย ✓`)
-      window.print()
+
+      // เปิดไฟล์จริงแต่ละใบในแท็บใหม่ให้ browser จัดการ print
+      const fileUrls = [...new Set(items.map(w => w.file_url).filter(Boolean))]
+      if (fileUrls.length === 0) {
+        showToast('ไม่พบไฟล์สำหรับปริ้น')
+        return
+      }
+      if (fileUrls.length === 1) {
+        const win = window.open(fileUrls[0], '_blank')
+        if (win) win.onload = () => { win.focus(); win.print() }
+      } else {
+        fileUrls.forEach((url, i) => {
+          setTimeout(() => window.open(url, '_blank'), i * 600)
+        })
+      }
+      showToast(`เปิดไฟล์ปริ้น ${names.length} ใบเรียบร้อย ✓`)
     } catch (e) {
       showToast('เกิดข้อผิดพลาด: ' + e.message)
     }

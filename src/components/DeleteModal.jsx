@@ -5,7 +5,7 @@ const CONFIRM_KEY = 'จะลบแล้วนะ'
 
 export default function DeleteModal({ onClose }) {
   const { worksheets, removeWorksheet, showToast } = useApp()
-  const [wsId,    setWsId]    = useState(worksheets[0]?.id || '')
+  const [wsId,    setWsId]    = useState(String(worksheets[0]?.id || ''))
   const [keyVal,  setKeyVal]  = useState('')
   const [loading, setLoading] = useState(false)
 
@@ -30,7 +30,7 @@ export default function DeleteModal({ onClose }) {
         <div className="form-group">
           <label className="form-label">เลือกใบงานที่ต้องการลบ</label>
           <select className="form-select" value={wsId} onChange={e => setWsId(e.target.value)}>
-            {worksheets.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
+            {worksheets.map(w => <option key={w.id} value={String(w.id)}>{w.name}</option>)}
           </select>
         </div>
         <div className="form-group">

@@ -3,12 +3,13 @@ import { useApp } from '../App'
 
 export default function EditModal({ onClose }) {
   const { worksheets, subjects, editWorksheet } = useApp()
-  const [wsId,    setWsId]    = useState(worksheets[0]?.id || '')
+  const [wsId,    setWsId]    = useState(String(worksheets[0]?.id || ''))
   const [name,    setName]    = useState('')
   const [subjKey, setSubjKey] = useState('thai')
 
   useEffect(() => {
-    const ws = worksheets.find(w => w.id === wsId)
+    // Supabase returns id as number — must compare as string to match dropdown value
+    const ws = worksheets.find(w => String(w.id) === wsId)
     if (ws) { setName(ws.name); setSubjKey(ws.subject_key) }
   }, [wsId, worksheets])
 
@@ -28,7 +29,7 @@ export default function EditModal({ onClose }) {
         <div className="form-group">
           <label className="form-label">เลือกใบงาน</label>
           <select className="form-select" value={wsId} onChange={e => setWsId(e.target.value)}>
-            {worksheets.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
+            {worksheets.map(w => <option key={w.id} value={String(w.id)}>{w.name}</option>)}
           </select>
         </div>
         <div className="form-group">
