@@ -24,15 +24,14 @@ const DEFAULT_SUBJECTS = [
   { id: 'art',  key: 'art',  label: 'ศิลปะ',      emoji: '🎨', color: 'art',  locked: true },
 ]
 
-// ── Print helper — render เฉพาะหน้าที่ต้องการจาก PDF แล้วปริ้น ──────
+// ── Print helper — render เฉพาะหน้าที่เลือก แล้วปริ้นในหน้าเดิม ──────
 async function printWorksheetItems(items) {
-  // import pdfjs dynamically
   const pdfjsLib = await import('pdfjs-dist')
   pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
     'pdfjs-dist/build/pdf.worker.mjs', import.meta.url
   ).toString()
 
-  // group items by file_url เพื่อโหลด PDF แต่ละไฟล์ครั้งเดียว
+  // group by file_url เพื่อโหลด PDF แต่ละไฟล์ครั้งเดียว
   const byFile = {}
   for (const item of items) {
     const url = item.file_url || item.thumbnail_url
@@ -41,8 +40,8 @@ async function printWorksheetItems(items) {
     byFile[url].push(item)
   }
 
-  // สร้าง canvas สำหรับแต่ละหน้าที่เลือก
-  const canvases = []
+  // render แต่ละหน้าเป็น dataUrl
+  const dataUrls = []
   for (const [fileUrl, fileItems] of Object.entries(byFile)) {
     const isPdf = fileUrl.match(/\.pdf(\?|$)/i) || fileItems[0]?.storage_path?.match(/\.pdf$/i)
     if (isPdf) {
@@ -52,46 +51,38 @@ async function printWorksheetItems(items) {
       for (const item of fileItems) {
         const pageNum = item.page_number || 1
         const page = await pdf.getPage(pageNum)
-        const viewport = page.getViewport({ scale: 2 })
+        const viewport = page.getViewport({ scale: 2.5 })
         const canvas = document.createElement('canvas')
         canvas.width = viewport.width
         canvas.height = viewport.height
         await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise
-        canvases.push({ canvas, name: item.name })
+        dataUrls.push(canvas.toDataURL('image/png'))
       }
     } else {
-      // รูปภาพ — ใช้ thumbnail โดยตรง
       for (const item of fileItems) {
-        const url2 = item.thumbnail_url || item.file_url
-        canvases.push({ imgUrl: url2, name: item.name })
+        dataUrls.push(item.thumbnail_url || item.file_url)
       }
     }
   }
 
-  if (canvases.length === 0) return false
+  if (dataUrls.length === 0) return false
 
-  // สร้าง print window จาก canvas/img
-  const win = window.open('', '_blank')
-  if (!win) return false
+  // สร้าง print-only div ซ่อนในหน้าเดิม — @media print จะแสดงแค่นี้
+  const printId = '__ws_print_area__'
+  let printDiv = document.getElementById(printId)
+  if (printDiv) printDiv.remove()
 
-  const html = canvases.map(c => {
-    if (c.canvas) {
-      return `<div class="page"><img src="${c.canvas.toDataURL('image/png')}" /></div>`
-    }
-    return `<div class="page"><img src="${c.imgUrl}" /></div>`
-  }).join('')
+  printDiv = document.createElement('div')
+  printDiv.id = printId
+  printDiv.innerHTML = dataUrls.map(url =>
+    `<div class="ws-print-page"><img src="${url}" /></div>`
+  ).join('')
+  document.body.appendChild(printDiv)
 
-  win.document.write(`<!DOCTYPE html><html><head><title>ปริ้นใบงาน</title>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { background: #fff; }
-    .page { width: 100%; page-break-after: always; page-break-inside: avoid; }
-    .page:last-child { page-break-after: avoid; }
-    .page img { width: 100%; height: auto; display: block; }
-    @media print { .page { page-break-after: always; } }
-  </style></head><body>${html}</body></html>`)
-  win.document.close()
-  win.onload = () => { win.focus(); win.print() }
+  window.print()
+
+  // cleanup หลังปริ้น
+  setTimeout(() => printDiv.remove(), 3000)
   return true
 }
 
