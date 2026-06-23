@@ -99,21 +99,27 @@ export default function App() {
       setHistory(prev => [{ ...entry, id: Date.now() }, ...prev])
       clearSelected()
 
-      // เปิดไฟล์จริงแต่ละใบในแท็บใหม่ให้ browser จัดการ print
+      // รวม file_url ที่ไม่ซ้ำกัน (หลายหน้าจาก PDF เดียวกันใช้ file_url เดียวกัน)
       const fileUrls = [...new Set(items.map(w => w.file_url).filter(Boolean))]
-      if (fileUrls.length === 0) {
-        showToast('ไม่พบไฟล์สำหรับปริ้น')
+      const thumbUrls = items.map(w => w.thumbnail_url).filter(Boolean)
+
+      if (fileUrls.length === 0 && thumbUrls.length === 0) {
+        showToast('ไม่พบไฟล์สำหรับปริ้น — ลองอัปโหลดใบงานใหม่')
         return
       }
-      if (fileUrls.length === 1) {
-        const win = window.open(fileUrls[0], '_blank')
-        if (win) win.onload = () => { win.focus(); win.print() }
-      } else {
-        fileUrls.forEach((url, i) => {
-          setTimeout(() => window.open(url, '_blank'), i * 600)
-        })
-      }
-      showToast(`เปิดไฟล์ปริ้น ${names.length} ใบเรียบร้อย ✓`)
+
+      // ใช้ file_url ถ้ามี ไม่งั้น fallback เป็น thumbnail
+      const urlsToOpen = fileUrls.length > 0 ? fileUrls : thumbUrls
+
+      urlsToOpen.forEach((url, i) => {
+        setTimeout(() => {
+          const win = window.open(url, '_blank')
+          if (win) {
+            win.addEventListener('load', () => { win.focus(); win.print() })
+          }
+        }, i * 800)
+      })
+      showToast(`เปิดไฟล์ปริ้น ${urlsToOpen.length} ไฟล์ — กรุณาอนุญาต popup ถ้า browser ถาม`)
     } catch (e) {
       showToast('เกิดข้อผิดพลาด: ' + e.message)
     }
@@ -133,15 +139,15 @@ export default function App() {
 
   // ── Delete worksheet ──────────────────────────────────────
   const removeWorksheet = useCallback(async (id) => {
-    const ws = worksheets.find(w => w.id === id)
+    // id อาจเป็น string หรือ number — normalize เป็น string เพื่อ compare
+    const ws = worksheets.find(w => String(w.id) === String(id))
     try {
       if (ws?.storage_path) await deleteFile(ws.storage_path)
       await dbDeleteWs(id)
-      setWorksheets(prev => prev.filter(w => w.id !== id))
-      setSelected(prev => { const n = new Set(prev); n.delete(id); return n })
-      showToast('ลบใบงานเรียบร้อย')
+      setWorksheets(prev => prev.filter(w => String(w.id) !== String(id)))
+      setSelected(prev => { const n = new Set(prev); n.delete(String(id)); return n })
     } catch (e) {
-      showToast('ลบไม่สำเร็จ: ' + e.message)
+      throw e  // ให้ caller (DeleteModal) จัดการ toast เอง
     }
   }, [worksheets])
 

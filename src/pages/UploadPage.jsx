@@ -67,20 +67,16 @@ export default function UploadPage() {
       const saved = []
       const selectedPageNums = [...selPages].sort((a, b) => a - b)
 
+      // 1. อัปโหลดไฟล์ต้นฉบับครั้งเดียว แล้วแชร์ file_url ให้ทุกหน้า
+      const ext = rawFile.name.split('.').pop().toLowerCase()
+      const sharedStoragePath = `uploads/${Date.now()}_orig.${ext}`
+      const sharedFileUrl = await uploadFile(rawFile, sharedStoragePath)
+
       for (const pageNum of selectedPageNums) {
         const page = pages.find(p => p.pageNumber === pageNum)
         const label = selectedPageNums.length > 1 ? `${fileName} (หน้า ${pageNum})` : fileName
 
-        // 1. Upload original file (only once for page 1, re-use path for others)
-        let storagePath = null
-        let fileUrl = null
-        if (pageNum === selectedPageNums[0]) {
-          const ext = rawFile.name.split('.').pop().toLowerCase()
-          storagePath = `uploads/${Date.now()}_p${pageNum}.${ext}`
-          fileUrl = await uploadFile(rawFile, storagePath)
-        }
-
-        // 2. Upload thumbnail (PNG dataUrl → Blob)
+        // 2. Upload thumbnail แต่ละหน้า
         let thumbUrl = null
         if (page?.dataUrl) {
           const blob = await dataUrlToBlob(page.dataUrl)
@@ -88,14 +84,14 @@ export default function UploadPage() {
           thumbUrl = await uploadFile(new File([blob], 'thumb.png', { type: 'image/png' }), thumbPath)
         }
 
-        // 3. Insert DB row
+        // 3. Insert DB row — ทุกหน้าได้ file_url เดียวกัน
         const row = await insertWorksheet({
           name:          label,
           subject_key:   subjectKey,
           page_number:   pageNum,
           page_count:    selectedPageNums.length,
-          storage_path:  storagePath,
-          file_url:      fileUrl,
+          storage_path:  sharedStoragePath,
+          file_url:      sharedFileUrl,
           thumbnail_url: thumbUrl,
           printed:       false,
         })
