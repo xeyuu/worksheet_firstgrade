@@ -24,64 +24,35 @@ const DEFAULT_SUBJECTS = [
   { id: 'art',  key: 'art',  label: 'ศิลปะ',      emoji: '🎨', color: 'art',  locked: true },
 ]
 
-// ── Print helper — render เฉพาะหน้าที่เลือก แล้วปริ้นในหน้าเดิม ──────
+// ── Print helper — ใช้ thumbnail ที่มีอยู่แล้ว ไม่ต้องโหลด PDF ใหม่ ──
 async function printWorksheetItems(items) {
-  const pdfjsLib = await import('pdfjs-dist')
-  pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
-    'pdfjs-dist/build/pdf.worker.mjs', import.meta.url
-  ).toString()
+  // ใช้ thumbnail_url ก่อน — โหลดเร็วกว่า PDF มาก
+  // fallback เป็น file_url ถ้าไม่มี thumbnail
+  const urls = items.map(item => item.thumbnail_url || item.file_url).filter(Boolean)
 
-  // group by file_url เพื่อโหลด PDF แต่ละไฟล์ครั้งเดียว
-  const byFile = {}
-  for (const item of items) {
-    const url = item.file_url || item.thumbnail_url
-    if (!url) continue
-    if (!byFile[url]) byFile[url] = []
-    byFile[url].push(item)
-  }
+  if (urls.length === 0) return false
 
-  // render แต่ละหน้าเป็น dataUrl
-  const dataUrls = []
-  for (const [fileUrl, fileItems] of Object.entries(byFile)) {
-    const isPdf = fileUrl.match(/\.pdf(\?|$)/i) || fileItems[0]?.storage_path?.match(/\.pdf$/i)
-    if (isPdf) {
-      const res = await fetch(fileUrl)
-      const arrayBuffer = await res.arrayBuffer()
-      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise
-      for (const item of fileItems) {
-        const pageNum = item.page_number || 1
-        const page = await pdf.getPage(pageNum)
-        const viewport = page.getViewport({ scale: 2.5 })
-        const canvas = document.createElement('canvas')
-        canvas.width = viewport.width
-        canvas.height = viewport.height
-        await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise
-        dataUrls.push(canvas.toDataURL('image/png'))
-      }
-    } else {
-      for (const item of fileItems) {
-        dataUrls.push(item.thumbnail_url || item.file_url)
-      }
-    }
-  }
-
-  if (dataUrls.length === 0) return false
-
-  // สร้าง print-only div ซ่อนในหน้าเดิม — @media print จะแสดงแค่นี้
   const printId = '__ws_print_area__'
   let printDiv = document.getElementById(printId)
   if (printDiv) printDiv.remove()
 
   printDiv = document.createElement('div')
   printDiv.id = printId
-  printDiv.innerHTML = dataUrls.map(url =>
-    `<div class="ws-print-page"><img src="${url}" /></div>`
-  ).join('')
   document.body.appendChild(printDiv)
 
-  window.print()
+  // preload รูปทุกรูปพร้อมกัน (parallel) แล้วค่อยปริ้น
+  await Promise.all(urls.map(url => new Promise(resolve => {
+    const page = document.createElement('div')
+    page.className = 'ws-print-page'
+    const img = document.createElement('img')
+    img.src = url
+    img.onload  = resolve
+    img.onerror = resolve
+    page.appendChild(img)
+    printDiv.appendChild(page)
+  })))
 
-  // cleanup หลังปริ้น
+  window.print()
   setTimeout(() => printDiv.remove(), 3000)
   return true
 }
